@@ -6,32 +6,54 @@ window.APP_CONFIG = {
   BUCKET: "content",
   MAX_MB: 10,
 
-  // Daftar sub halaman. "id" dipakai di alamat embed (?page=halaman-1) dan sebagai
-  // nama folder file: hanya huruf kecil, angka, dan tanda hubung. Ganti "label" dengan nama aslinya.
-  // JANGAN ubah id setelah ada konten, karena konten lama tidak ikut pindah.
-  PAGES: [
-    { id: "halaman-1",  label: "Profil Risiko 1" },
-    { id: "halaman-2",  label: "Profil Risiko 2" },
-    { id: "halaman-3",  label: "Profil Risiko 3" },
-    { id: "halaman-4",  label: "Profil Risiko 4" },
-    { id: "halaman-5",  label: "Profil Risiko 5" },
-    { id: "halaman-6",  label: "Profil Risiko 6" },
-    { id: "halaman-7",  label: "Profil Risiko 7" },
-    { id: "halaman-8",  label: "Profil Risiko 8" },
-    { id: "halaman-9",  label: "Profil Risiko 9" },
-    { id: "halaman-10", label: "Profil Risiko 10" },
-    { id: "halaman-11", label: "Profil Risiko 11" },
-    { id: "halaman-12", label: "Profil Risiko 12" },
-    { id: "halaman-13", label: "Profil Risiko 13" }
+  // Pilihan status residu risiko. CONTOH SAJA: ganti dengan level yang sebenarnya.
+  // key: pengenal tetap (huruf kecil/angka/tanda hubung, jangan diubah setelah dipakai)
+  // label: teks yang tampil | color: warna latar (kode hex)
+  STATUS_LEVELS: [
+    { key: "sangat-rendah", label: "Sangat rendah", color: "#2e9e5b" },
+    { key: "rendah",        label: "Rendah",        color: "#8bc34a" },
+    { key: "sedang",        label: "Sedang",        color: "#f2c230" },
+    { key: "tinggi",        label: "Tinggi",        color: "#f08a24" },
+    { key: "sangat-tinggi", label: "Sangat tinggi", color: "#d64545" }
   ],
 
-  // Komponen yang ada di SETIAP sub halaman, sesuai urutan tampil.
-  // key: pengenal tetap (huruf kecil/angka/tanda hubung). label: nama yang tampil.
-  // kind: "text" | "photo" | "document"
-  // Jika satu sub halaman punya komponen berbeda, tambahkan  slots: [ ... ]  di entri halaman itu.
+  // Halaman muka + 13 sub halaman. "id" dipakai di alamat (?page=halaman-1) dan nama folder file:
+  // huruf kecil, angka, tanda hubung. Ganti "label" dengan nama asli. Jangan ubah id setelah ada konten.
+  PAGES: [
+    { id: "home", label: "Halaman muka", slots: [
+      { key: "pemilik",      label: "Pemilik risiko",    kind: "person", large: true },
+      { key: "pengendali-1", label: "Pengendali risiko 1", kind: "person" },
+      { key: "pengendali-2", label: "Pengendali risiko 2", kind: "person" },
+      { key: "pengendali-3", label: "Pengendali risiko 3", kind: "person" },
+      { key: "pengendali-4", label: "Pengendali risiko 4", kind: "person" }
+    ] },
+    { id: "halaman-1",  label: "Halaman 1" },
+    { id: "halaman-2",  label: "Halaman 2" },
+    { id: "halaman-3",  label: "Halaman 3" },
+    { id: "halaman-4",  label: "Halaman 4" },
+    { id: "halaman-5",  label: "Halaman 5" },
+    { id: "halaman-6",  label: "Halaman 6" },
+    { id: "halaman-7",  label: "Halaman 7" },
+    { id: "halaman-8",  label: "Halaman 8" },
+    { id: "halaman-9",  label: "Halaman 9" },
+    { id: "halaman-10", label: "Halaman 10" },
+    { id: "halaman-11", label: "Halaman 11" },
+    { id: "halaman-12", label: "Halaman 12" },
+    { id: "halaman-13", label: "Halaman 13" }
+  ],
+
+  // Komponen yang sama di SETIAP sub halaman (halaman tanpa "slots" sendiri memakai daftar ini).
+  // kind: "status" | "person" | "document"
   SLOTS: [
-    { key: "nama",    label: "Nama",        kind: "text" },
-    { key: "foto",    label: "Foto",        kind: "photo" },
-    { key: "dokumen", label: "Dokumen PDF", kind: "document" }
+    { key: "status",            label: "Status residu risiko",          kind: "status" },
+    { key: "penjamin-mutu",     label: "Penjamin mutu",                 kind: "person" },
+    { key: "pengendali-1",      label: "Pengendali risiko 1",           kind: "person" },
+    { key: "pengendali-2",      label: "Pengendali risiko 2",           kind: "person" },
+    { key: "risk-register",     label: "Risk register",                 kind: "document" },
+    { key: "sop",               label: "SOP",                           kind: "document" },
+    { key: "form-pengendalian", label: "Form pengendalian",             kind: "document" },
+    { key: "jadwal-rencana",    label: "Jadwal rencana",                kind: "document" },
+    { key: "bukti-pelaksanaan", label: "Bukti pelaksanaan",             kind: "document" },
+    { key: "eval-perbaikan",    label: "Evaluasi dan rencana perbaikan", kind: "document" }
   ]
 };

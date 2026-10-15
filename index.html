@@ -11,7 +11,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg);
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  font: 16px/1.55 "Helvetica Neue", Helvetica, Arial, sans-serif; }
 .slot { padding: 0 0 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
 .slot:last-child { border-bottom: 0; margin-bottom: 0; }
 h2 { font-size: 1rem; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
@@ -20,7 +20,19 @@ a { color: var(--accent); }
 img { max-width: 100%; height: auto; display: block; border-radius: 4px; background: var(--line); }
 .note { color: var(--muted); }
 
-/* Mode polos (?polos=1): hanya foto, mengisi seluruh frame */
+main { display: flex; flex-wrap: wrap; gap: 0 28px; }
+.slot { flex: 1 1 100%; }
+.slot.person { flex: 0 0 auto; width: var(--pw, 150px); padding: 0; margin: 0 0 18px; border: 0; text-align: center; }
+.slot.person.large { --pw: 200px; }
+.photo { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+.pname { font-weight: 700; font-size: 12px; margin-top: 8px; }
+.ppos { font-size: 12px; }
+.person.large .pname, .person.large .ppos { font-size: 18px; }
+.slot.status { border: 0; padding: 14px 16px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 18px; }
+.menu { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; margin: 8px 0 0; }
+.menu a { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; }
+
+/* Mode polos (?polos=1): tanpa latar dan jarak, mengisi seluruh frame */
 html.bare, html.bare body, html.bare main, html.bare .slot { height: 100%; }
 html.bare body { padding: 0; background: transparent; }
 html.bare .slot { padding: 0; margin: 0; border: 0; }
@@ -32,6 +44,9 @@ html.bare a.doc { display: flex; align-items: center; justify-content: center; t
 html.bare .slot.pdfslot { height: auto; }
 html.bare .pdf a { height: auto; }
 html.bare img { width: 100%; height: 100%; object-fit: var(--fit, contain); border-radius: 0; background: transparent; }
+html.bare .slot.person { width: 100%; height: auto; }
+html.bare .photo { width: 100%; height: auto; aspect-ratio: 3 / 4; object-fit: cover; }
+html.bare .slot.status { height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 0; }
 </style>
 </head>
 <body>
@@ -40,7 +55,7 @@ html.bare img { width: 100%; height: 100%; object-fit: var(--fit, contain); bord
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script>
-const { SUPABASE_URL, SUPABASE_ANON_KEY, BUCKET, PAGES, SLOTS } = window.APP_CONFIG;
+const { SUPABASE_URL, SUPABASE_ANON_KEY, BUCKET, PAGES, SLOTS, STATUS_LEVELS } = window.APP_CONFIG;
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Alamat embed: index.html?page=halaman-1
@@ -114,7 +129,36 @@ function fileUrl(row) {
   return data.publicUrl + "?v=" + encodeURIComponent(row.updated_at); // ?v= memastikan file baru langsung tampil
 }
 
+function renderPerson(slot, row) {
+  const d = row.data || {};
+  if (!d.name && !row.file_path) return null;
+  const box = el("section", { className: "slot person" + (slot.large ? " large" : "") });
+  if (showHeading) box.append(el("h2", { textContent: slot.label }));
+  if (row.file_path) box.append(el("img", { className: "photo", src: fileUrl(row), alt: d.name || slot.label, loading: "lazy" }));
+  if (d.name) box.append(el("div", { className: "pname", textContent: d.name }));
+  if (d.position) box.append(el("div", { className: "ppos", textContent: d.position }));
+  return box;
+}
+
+function readable(hex) { // pilih teks gelap/putih agar terbaca di atas warna latar
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h.replace(/./g, c => c + c);
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#1b2430" : "#ffffff";
+}
+
+function renderStatus(slot, row) {
+  const level = STATUS_LEVELS.find(l => l.key === (row.data || {}).level);
+  if (!level) return null;
+  const box = el("section", { className: "slot status", textContent: level.label });
+  box.style.background = level.color;
+  box.style.color = readable(level.color);
+  return box;
+}
+
 function render(slot, row) {
+  if (slot.kind === "person") return renderPerson(slot, row);
+  if (slot.kind === "status") return renderStatus(slot, row);
   const box = el("section", { className: "slot" });
   if (showHeading) box.append(el("h2", { textContent: slot.label }));
   if (slot.kind === "text") {
@@ -138,9 +182,16 @@ function render(slot, row) {
   return box;
 }
 
+function directory() { // alamat tanpa ?page= : tampilkan tombol ke semua halaman
+  document.getElementById("root").replaceChildren(
+    el("p", { className: "note", textContent: "Pilih halaman:" }),
+    el("div", { className: "menu" }, PAGES.map(p => el("a", { href: "?page=" + p.id, textContent: p.label })))
+  );
+}
+
 async function load() {
   const page = PAGES.find(p => p.id === params.get("page"));
-  if (!page) return say("Tambahkan ?page=… pada alamat. Pilihan: " + PAGES.map(p => p.id).join(", "));
+  if (!page) return directory();
 
   const { data, error } = await sb.from("page_content").select("*").eq("page", page.id);
   if (error) { console.error(error); return say("Konten belum bisa dimuat. Coba muat ulang halaman."); }

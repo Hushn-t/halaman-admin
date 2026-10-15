@@ -38,6 +38,14 @@ button:disabled { opacity: .55; cursor: wait; }
 .actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .msg { margin-top: 8px; min-height: 1.3em; font-size: .93rem; }
 .msg.err { color: var(--danger); }
+a { color: var(--accent); }
+.links { margin: 10px 0 0; font-size: .92rem; }
+.lbl { display: block; margin: 12px 0 4px; font-weight: 600; font-size: .95rem; }
+.levels { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.level { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.level:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.level input { width: auto; margin: 0; }
+.dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -62,8 +70,12 @@ button:disabled { opacity: .55; cursor: wait; }
     <div><h1>Kelola konten</h1><div id="who" class="muted"></div></div>
     <button id="logout" type="button">Keluar</button>
   </div>
-  <label for="page" style="margin-top:0">Sub halaman</label>
+  <label for="page" style="margin-top:0">Halaman</label>
   <select id="page"></select>
+  <div class="links">
+    <a href="index.html" target="_blank" rel="noopener">Halaman konten (daftar semua halaman)</a> ·
+    <a id="viewLink" href="index.html" target="_blank" rel="noopener">Lihat halaman ini</a>
+  </div>
   <div id="slots"></div>
 </section>
 
@@ -72,7 +84,7 @@ button:disabled { opacity: .55; cursor: wait; }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script>
-const { SUPABASE_URL, SUPABASE_ANON_KEY, BUCKET, MAX_MB, PAGES, SLOTS } = window.APP_CONFIG;
+const { SUPABASE_URL, SUPABASE_ANON_KEY, BUCKET, MAX_MB, PAGES, SLOTS, STATUS_LEVELS } = window.APP_CONFIG;
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
 
@@ -124,12 +136,13 @@ $("page").addEventListener("change", loadPage);
 
 async function loadPage() {
   const pageId = curPage().id;
+  $("viewLink").href = "index.html?page=" + pageId;
   $("slots").replaceChildren(el("p", { className: "muted", textContent: "Memuat…" }));
   const { data, error } = await sb.from("page_content").select("*").eq("page", pageId);
   if (curPage().id !== pageId) return; // pilihan sudah berganti saat memuat
   if (error) { $("slots").replaceChildren(el("p", { className: "muted", textContent: "Gagal memuat. Muat ulang halaman." })); return; }
   rows = Object.fromEntries(data.map(r => [r.slot, r]));
-  $("slots").replaceChildren(...(curPage().slots || SLOTS).map(s => slotBox(s)));
+  $("slots").replaceChildren(...(curPage().slots || SLOTS).map(s => buildBox(s)));
 }
 
 /* ---------- Satu komponen = satu kotak ---------- */
@@ -209,6 +222,118 @@ function slotBox(slot, startMsg = "") {
     if (curPage().id === pageId) { delete rows[slot.key]; box.replaceWith(slotBox(slot, "Dikosongkan.")); }
   });
 
+  return box;
+}
+
+/* ---------- Pegawai, status, dan pembantu bersama ---------- */
+const buildBox = (s, m = "") => s.kind === "person" ? personBox(s, m) : s.kind === "status" ? statusBox(s, m) : slotBox(s, m);
+
+async function putRow(pageId, slot, patch) {
+  const newRow = { page: pageId, slot: slot.key, kind: slot.kind, body: null, file_path: null, data: {}, updated_at: new Date().toISOString(), ...patch };
+  const { data, error } = await sb.from("page_content").upsert(newRow, { onConflict: "page,slot" }).select().single();
+  if (error) throw error;
+  if (curPage().id === pageId) rows[slot.key] = data;
+}
+
+async function dropRow(pageId, slot, row) {
+  const { error } = await sb.from("page_content").delete().eq("page", pageId).eq("slot", slot.key);
+  if (error) throw error;
+  await removeFile(row && row.file_path);
+  if (curPage().id === pageId) delete rows[slot.key];
+}
+
+function field(label, input) {
+  input.setAttribute("aria-label", label);
+  return el("div", {}, [el("span", { className: "lbl", textContent: label }), input]);
+}
+
+function actions(box, pageId, slot, row, onSave, rebuild, startMsg) {
+  const msg = el("div", { className: "msg", role: "status", textContent: startMsg });
+  const say = (t, err = false) => { msg.textContent = t; msg.className = "msg" + (err ? " err" : ""); };
+  const save = el("button", { className: "primary", type: "button", textContent: "Simpan" });
+  const clear = el("button", { className: "link", type: "button", textContent: "Kosongkan", hidden: !row });
+  const lock = v => { save.disabled = clear.disabled = v; };
+  save.addEventListener("click", async () => {
+    lock(true); say("Menyimpan…");
+    try {
+      await onSave();
+      if (curPage().id === pageId) box.replaceWith(rebuild("Tersimpan."));
+    } catch (err) {
+      console.error(err);
+      say(err instanceof UserError ? err.message : "Gagal menyimpan. Pastikan kamu masuk sebagai admin, lalu coba lagi.", true);
+      lock(false);
+    }
+  });
+  clear.addEventListener("click", async () => {
+    if (!confirm(`Kosongkan "${slot.label}"? Isi dan fotonya ikut terhapus.`)) return;
+    lock(true); say("Menghapus…");
+    try {
+      await dropRow(pageId, slot, row);
+      if (curPage().id === pageId) box.replaceWith(rebuild("Dikosongkan."));
+    } catch (err) { console.error(err); say("Gagal menghapus.", true); lock(false); }
+  });
+  box.append(el("div", { className: "actions" }, [save, clear]), msg);
+}
+
+// Satu pegawai = satu bagian: nama, jabatan, dan foto disimpan bersamaan
+function personBox(slot, startMsg = "") {
+  const pageId = curPage().id;
+  const row = rows[slot.key];
+  const d = (row && row.data) || {};
+  const has = !!(row && row.file_path);
+  const nama = el("input", { type: "text", value: d.name || "", maxLength: 120 });
+  const jabatan = el("input", { type: "text", value: d.position || "", maxLength: 160 });
+  const foto = el("input", { type: "file", accept: Object.keys(TYPES.photo).join(",") });
+  foto.setAttribute("aria-label", "Foto");
+  const box = el("section", { className: "slot" }, [
+    el("h2", { textContent: slot.label }),
+    field("Nama lengkap", nama),
+    field("Jabatan", jabatan),
+    el("span", { className: "lbl", textContent: "Foto" }),
+    el("div", { className: "current" }, [
+      ...(has ? [el("img", { src: fileUrl(row), alt: "" })] : []),
+      el("span", { className: "muted", textContent: has ? "Foto saat ini. Pilih file baru untuk menggantinya." : "Belum ada foto." })
+    ]),
+    foto
+  ]);
+  actions(box, pageId, slot, row, async () => {
+    const name = nama.value.trim();
+    if (!name) throw new UserError("Nama lengkap wajib diisi.");
+    let file_path = has ? row.file_path : null;
+    const file = foto.files[0];
+    if (file) {
+      const ext = TYPES.photo[file.type];
+      if (!ext) throw new UserError("Foto harus berformat JPG, PNG, atau WebP.");
+      if (file.size > MAX_MB * 1024 * 1024) throw new UserError(`File terlalu besar (maks ${MAX_MB} MB).`);
+      file_path = `${pageId}/${slot.key}.${ext}`;
+      const up = await sb.storage.from(BUCKET).upload(file_path, file, { upsert: true, contentType: file.type });
+      if (up.error) throw up.error;
+    }
+    await putRow(pageId, slot, { data: { name, position: jabatan.value.trim() }, file_path });
+    if (has && row.file_path !== file_path) await removeFile(row.file_path); // ekstensi foto berubah
+  }, m => personBox(slot, m), startMsg);
+  return box;
+}
+
+// Status residu risiko: pilih satu level (teks dan warna diambil dari config.js)
+function statusBox(slot, startMsg = "") {
+  const pageId = curPage().id;
+  const row = rows[slot.key];
+  const current = row && row.data && row.data.level;
+  const group = el("div", { className: "levels", role: "radiogroup" });
+  STATUS_LEVELS.forEach(l => {
+    const dot = el("span", { className: "dot" });
+    dot.style.background = l.color;
+    group.append(el("label", { className: "level" }, [
+      el("input", { type: "radio", name: pageId + "-" + slot.key, value: l.key, checked: l.key === current }), dot, l.label
+    ]));
+  });
+  const box = el("section", { className: "slot" }, [el("h2", { textContent: slot.label }), group]);
+  actions(box, pageId, slot, row, async () => {
+    const sel = group.querySelector("input:checked");
+    if (!sel) throw new UserError("Pilih salah satu status.");
+    await putRow(pageId, slot, { data: { level: sel.value } });
+  }, m => statusBox(slot, m), startMsg);
   return box;
 }
 </script>
