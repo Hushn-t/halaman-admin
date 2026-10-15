@@ -27,6 +27,10 @@ html.bare .slot { padding: 0; margin: 0; border: 0; }
 html.bare { --fg: #1b2430; --accent: #0f6fd1; } /* warna tetap, tidak ikut mode gelap perangkat */
 html.bare a { display: block; height: 100%; }
 html.bare a.doc { display: flex; align-items: center; justify-content: center; text-align: center; }
+.pdf a { display: block; margin: 0 0 8px; }
+.pdf canvas { display: block; width: 100%; height: auto; background: #fff; }
+html.bare .slot.pdfslot { height: auto; }
+html.bare .pdf a { height: auto; }
 html.bare img { width: 100%; height: 100%; object-fit: var(--fit, contain); border-radius: 0; background: transparent; }
 </style>
 </head>
@@ -59,6 +63,44 @@ if (bare) {
   }
 }
 
+// &pdf=tampil : isi PDF digambar langsung di dalam frame (dengan PDF.js), bukan hanya link
+const showPdf = params.get("pdf") === "tampil";
+const pdfQueue = [];
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+let pdfjsPromise;
+
+function loadPdfJs() {
+  pdfjsPromise = pdfjsPromise || new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = PDFJS + "pdf.min.js";
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js"; ok(window.pdfjsLib); };
+    s.onerror = () => fail(new Error("PDF.js gagal dimuat"));
+    document.head.append(s);
+  });
+  return pdfjsPromise;
+}
+
+async function drawPdf(holder, url, label) {
+  try {
+    const lib = await loadPdfJs();
+    const pdf = await lib.getDocument(url).promise;
+    const width = holder.clientWidth || 600;
+    const dpr = window.devicePixelRatio || 1;
+    holder.replaceChildren();
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: (width / base.width) * dpr });
+      const canvas = el("canvas", { width: vp.width, height: vp.height });
+      holder.append(el("a", { href: url, target: "_blank", rel: "noopener" }, [canvas]));
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+    }
+  } catch (err) {
+    console.error(err);
+    holder.replaceChildren(el("a", { href: url, target: "_blank", rel: "noopener", textContent: "Buka " + label + " di tab baru" }));
+  }
+}
+
 function el(tag, props = {}, kids = []) {
   const n = document.createElement(tag);
   Object.assign(n, props);
@@ -85,6 +127,13 @@ function render(slot, row) {
   const link = slot.kind === "photo"
     ? el("a", { href: url, target: "_blank", rel: "noopener" }, [el("img", { src: url, alt: slot.label, loading: "lazy" })])
     : el("a", { className: "doc", href: url, target: "_blank", rel: "noopener", textContent: showHeading ? "Buka dokumen" : slot.label });
+  if (slot.kind === "document" && showPdf) {
+    box.classList.add("pdfslot");
+    const holder = el("div", { className: "pdf" }, [el("p", { className: "note", textContent: "Memuat dokumen…" })]);
+    box.append(holder);
+    pdfQueue.push(() => drawPdf(holder, url, slot.label));
+    return box;
+  }
   box.append(link);
   return box;
 }
@@ -102,10 +151,11 @@ async function load() {
   const nodes = slots.map(s => bySlot[s.key] && render(s, bySlot[s.key])).filter(Boolean);
   if (!nodes.length) return say("Belum ada konten.");
   document.getElementById("root").replaceChildren(...nodes);
+  pdfQueue.splice(0).forEach(run => run());
 }
 
 load();
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !showPdf) load(); });
 </script>
 </body>
 </html>
