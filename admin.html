@@ -94,6 +94,7 @@ const TYPES = {
 };
 const HINT = { photo: "JPG, PNG, atau WebP", document: "PDF" };
 class UserError extends Error {}
+const EMP = "__pegawai"; // pilihan khusus: Daftar pegawai
 
 let rows = {}; // slot key -> data tersimpan untuk sub halaman yang sedang dipilih
 
@@ -103,7 +104,7 @@ function el(tag, props = {}, kids = []) {
   kids.forEach(k => n.append(k));
   return n;
 }
-const curPage = () => PAGES.find(p => p.id === $("page").value);
+const curPage = () => PAGES.find(p => p.id === $("page").value) || {};
 function fileUrl(r) {
   return sb.storage.from(BUCKET).getPublicUrl(r.file_path).data.publicUrl + "?v=" + encodeURIComponent(r.updated_at);
 }
@@ -131,13 +132,16 @@ $("loginForm").addEventListener("submit", async e => {
 $("logout").addEventListener("click", () => sb.auth.signOut());
 
 /* ---------- Pilih sub halaman ---------- */
+$("page").append(new Option("Daftar pegawai", EMP));
 PAGES.forEach(p => $("page").append(new Option(p.label, p.id)));
 $("page").addEventListener("change", loadPage);
 
 async function loadPage() {
+  if ($("page").value === EMP) { $("viewLink").href = "index.html"; return renderEmployees(); }
   const pageId = curPage().id;
   $("viewLink").href = "index.html?page=" + pageId;
   $("slots").replaceChildren(el("p", { className: "muted", textContent: "Memuat…" }));
+  await fetchEmployees();
   const { data, error } = await sb.from("page_content").select("*").eq("page", pageId);
   if (curPage().id !== pageId) return; // pilihan sudah berganti saat memuat
   if (error) { $("slots").replaceChildren(el("p", { className: "muted", textContent: "Gagal memuat. Muat ulang halaman." })); return; }
@@ -275,42 +279,124 @@ function actions(box, pageId, slot, row, onSave, rebuild, startMsg) {
   box.append(el("div", { className: "actions" }, [save, clear]), msg);
 }
 
+/* ---------- Daftar pegawai: diisi sekali, dipilih di semua halaman ---------- */
+let employees = [];
+async function fetchEmployees() {
+  const { data, error } = await sb.from("employees").select("*").order("name");
+  if (error) console.error(error);
+  employees = error ? [] : data;
+}
+const empPhoto = e => fileUrl({ file_path: e.photo_path, updated_at: e.updated_at });
+const empText = e => e.name + (e.position ? " — " + e.position : "");
+
+async function renderEmployees(note = {}) {
+  if ($("page").value !== EMP) return;
+  $("slots").replaceChildren(el("p", { className: "muted", textContent: "Memuat…" }));
+  await fetchEmployees();
+  if ($("page").value !== EMP) return;
+  $("slots").replaceChildren(
+    el("p", { className: "muted", textContent: "Isi sekali di sini. Di halaman muka dan sub halaman, tinggal pilih pegawai dari daftar ini. Mengubah data di sini otomatis mengubah semua halaman yang memakainya." }),
+    employeeBox(null, note.id === null ? note.text : ""),
+    ...employees.map(e => employeeBox(e, note.id === e.id ? note.text : ""))
+  );
+}
+
 // Satu pegawai = satu bagian: nama, jabatan, dan foto disimpan bersamaan
-function personBox(slot, startMsg = "") {
-  const pageId = curPage().id;
-  const row = rows[slot.key];
-  const d = (row && row.data) || {};
-  const has = !!(row && row.file_path);
-  const nama = el("input", { type: "text", value: d.name || "", maxLength: 120 });
-  const jabatan = el("input", { type: "text", value: d.position || "", maxLength: 160 });
+function employeeBox(emp, startMsg = "") {
+  const nama = el("input", { type: "text", value: emp ? emp.name : "", maxLength: 120 });
+  const jabatan = el("input", { type: "text", value: emp ? emp.position || "" : "", maxLength: 160 });
   const foto = el("input", { type: "file", accept: Object.keys(TYPES.photo).join(",") });
   foto.setAttribute("aria-label", "Foto");
+  const has = !!(emp && emp.photo_path);
+  const msg = el("div", { className: "msg", role: "status", textContent: startMsg });
+  const say = (t, err = false) => { msg.textContent = t; msg.className = "msg" + (err ? " err" : ""); };
+  const save = el("button", { className: "primary", type: "button", textContent: emp ? "Simpan perubahan" : "Tambah pegawai" });
+  const del = el("button", { className: "link", type: "button", textContent: "Hapus pegawai", hidden: !emp });
+  const lock = v => { save.disabled = del.disabled = v; };
   const box = el("section", { className: "slot" }, [
-    el("h2", { textContent: slot.label }),
+    el("h2", { textContent: emp ? emp.name : "Tambah pegawai baru" }),
     field("Nama lengkap", nama),
     field("Jabatan", jabatan),
     el("span", { className: "lbl", textContent: "Foto" }),
     el("div", { className: "current" }, [
-      ...(has ? [el("img", { src: fileUrl(row), alt: "" })] : []),
+      ...(has ? [el("img", { src: empPhoto(emp), alt: "" })] : []),
       el("span", { className: "muted", textContent: has ? "Foto saat ini. Pilih file baru untuk menggantinya." : "Belum ada foto." })
     ]),
-    foto
+    foto,
+    el("div", { className: "actions" }, [save, del]),
+    msg
   ]);
-  actions(box, pageId, slot, row, async () => {
-    const name = nama.value.trim();
-    if (!name) throw new UserError("Nama lengkap wajib diisi.");
-    let file_path = has ? row.file_path : null;
-    const file = foto.files[0];
-    if (file) {
-      const ext = TYPES.photo[file.type];
-      if (!ext) throw new UserError("Foto harus berformat JPG, PNG, atau WebP.");
-      if (file.size > MAX_MB * 1024 * 1024) throw new UserError(`File terlalu besar (maks ${MAX_MB} MB).`);
-      file_path = `${pageId}/${slot.key}.${ext}`;
-      const up = await sb.storage.from(BUCKET).upload(file_path, file, { upsert: true, contentType: file.type });
-      if (up.error) throw up.error;
+
+  save.addEventListener("click", async () => {
+    lock(true); say("Menyimpan…");
+    try {
+      const name = nama.value.trim();
+      if (!name) throw new UserError("Nama lengkap wajib diisi.");
+      const id = emp ? emp.id : crypto.randomUUID();
+      let photo_path = has ? emp.photo_path : null;
+      const file = foto.files[0];
+      if (file) {
+        const ext = TYPES.photo[file.type];
+        if (!ext) throw new UserError("Foto harus berformat JPG, PNG, atau WebP.");
+        if (file.size > MAX_MB * 1024 * 1024) throw new UserError(`File terlalu besar (maks ${MAX_MB} MB).`);
+        photo_path = `pegawai/${id}.${ext}`;
+        const up = await sb.storage.from(BUCKET).upload(photo_path, file, { upsert: true, contentType: file.type });
+        if (up.error) throw up.error;
+      }
+      const { error } = await sb.from("employees").upsert({ id, name, position: jabatan.value.trim(), photo_path, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      if (has && emp.photo_path !== photo_path) await removeFile(emp.photo_path); // ekstensi foto berubah
+      await renderEmployees({ id: emp ? id : null, text: "Tersimpan." });
+    } catch (err) {
+      console.error(err);
+      say(err instanceof UserError ? err.message : "Gagal menyimpan. Pastikan kamu masuk sebagai admin, lalu coba lagi.", true);
+      lock(false);
     }
-    await putRow(pageId, slot, { data: { name, position: jabatan.value.trim() }, file_path });
-    if (has && row.file_path !== file_path) await removeFile(row.file_path); // ekstensi foto berubah
+  });
+
+  del.addEventListener("click", async () => {
+    try {
+      const { data: used } = await sb.from("page_content").select("page").eq("data->>employee", emp.id);
+      const n = used ? used.length : 0;
+      if (!confirm(`Hapus "${emp.name}"?` + (n ? ` Pegawai ini dipakai di ${n} posisi, dan posisi itu akan kosong.` : ""))) return;
+      lock(true); say("Menghapus…");
+      const { error } = await sb.from("employees").delete().eq("id", emp.id);
+      if (error) throw error;
+      await removeFile(emp.photo_path);
+      await renderEmployees({ id: null, text: "Terhapus." });
+    } catch (err) { console.error(err); say("Gagal menghapus.", true); lock(false); }
+  });
+  return box;
+}
+
+// Satu posisi di halaman = pilih pegawai dari daftar
+function personBox(slot, startMsg = "") {
+  const pageId = curPage().id;
+  const row = rows[slot.key];
+  const d = (row && row.data) || {};
+  const sel = el("select", {}, [
+    el("option", { value: "", textContent: "— Belum dipilih —" }),
+    ...employees.map(e => el("option", { value: e.id, textContent: empText(e) }))
+  ]);
+  sel.value = employees.some(e => e.id === d.employee) ? d.employee : "";
+  sel.setAttribute("aria-label", slot.label);
+  const preview = el("div", { className: "current" });
+  const showPreview = () => {
+    const e = employees.find(x => x.id === sel.value);
+    const hint = !employees.length ? "Daftar pegawai masih kosong. Tambahkan dulu di menu Daftar pegawai."
+      : d.employee ? "Pegawai yang dipilih sebelumnya sudah dihapus. Pilih lagi."
+      : d.name ? "Memakai data lama: " + d.name + ". Pilih pegawai untuk menggantinya."
+      : "Belum ada pegawai dipilih.";
+    preview.replaceChildren(...(e
+      ? [...(e.photo_path ? [el("img", { src: empPhoto(e), alt: "" })] : []), el("span", { textContent: empText(e) })]
+      : [el("span", { className: "muted", textContent: hint })]));
+  };
+  sel.addEventListener("change", showPreview);
+  showPreview();
+  const box = el("section", { className: "slot" }, [el("h2", { textContent: slot.label }), sel, preview]);
+  actions(box, pageId, slot, row, async () => {
+    if (!sel.value) throw new UserError("Pilih pegawai dulu.");
+    await putRow(pageId, slot, { data: { employee: sel.value } });
   }, m => personBox(slot, m), startMsg);
   return box;
 }

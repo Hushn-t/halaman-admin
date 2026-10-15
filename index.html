@@ -81,6 +81,7 @@ if (bare) {
 // &pdf=tampil : isi PDF digambar langsung di dalam frame (dengan PDF.js), bukan hanya link
 const showPdf = params.get("pdf") === "tampil";
 const pdfQueue = [];
+let empById = {}; // daftar pegawai, diisi saat halaman dimuat
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
 let pdfjsPromise;
 
@@ -131,12 +132,15 @@ function fileUrl(row) {
 
 function renderPerson(slot, row) {
   const d = row.data || {};
-  if (!d.name && !row.file_path) return null;
+  // Data baru merujuk ke daftar pegawai; data lama (nama langsung di baris) tetap bisa tampil
+  const e = d.employee ? empById[d.employee]
+    : { name: d.name, position: d.position, photo_path: row.file_path, updated_at: row.updated_at };
+  if (!e || (!e.name && !e.photo_path)) return null;
   const box = el("section", { className: "slot person" + (slot.large ? " large" : "") });
   if (showHeading) box.append(el("h2", { textContent: slot.label }));
-  if (row.file_path) box.append(el("img", { className: "photo", src: fileUrl(row), alt: d.name || slot.label, loading: "lazy" }));
-  if (d.name) box.append(el("div", { className: "pname", textContent: d.name }));
-  if (d.position) box.append(el("div", { className: "ppos", textContent: d.position }));
+  if (e.photo_path) box.append(el("img", { className: "photo", src: fileUrl({ file_path: e.photo_path, updated_at: e.updated_at }), alt: e.name || slot.label, loading: "lazy" }));
+  if (e.name) box.append(el("div", { className: "pname", textContent: e.name }));
+  if (e.position) box.append(el("div", { className: "ppos", textContent: e.position }));
   return box;
 }
 
@@ -193,8 +197,13 @@ async function load() {
   const page = PAGES.find(p => p.id === params.get("page"));
   if (!page) return directory();
 
-  const { data, error } = await sb.from("page_content").select("*").eq("page", page.id);
-  if (error) { console.error(error); return say("Konten belum bisa dimuat. Coba muat ulang halaman."); }
+  const [pc, em] = await Promise.all([
+    sb.from("page_content").select("*").eq("page", page.id),
+    sb.from("employees").select("*")
+  ]);
+  if (pc.error || em.error) { console.error(pc.error || em.error); return say("Konten belum bisa dimuat. Coba muat ulang halaman."); }
+  const data = pc.data;
+  empById = Object.fromEntries(em.data.map(e => [e.id, e]));
 
   const bySlot = Object.fromEntries(data.map(r => [r.slot, r]));
   const slots = (page.slots || SLOTS).filter(s =>
