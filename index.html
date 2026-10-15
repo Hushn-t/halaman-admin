@@ -24,7 +24,9 @@ img { max-width: 100%; height: auto; display: block; border-radius: 4px; backgro
 html.bare, html.bare body, html.bare main, html.bare .slot { height: 100%; }
 html.bare body { padding: 0; background: transparent; }
 html.bare .slot { padding: 0; margin: 0; border: 0; }
+html.bare { --fg: #1b2430; --accent: #0f6fd1; } /* warna tetap, tidak ikut mode gelap perangkat */
 html.bare a { display: block; height: 100%; }
+html.bare a.doc { display: flex; align-items: center; justify-content: center; text-align: center; }
 html.bare img { width: 100%; height: 100%; object-fit: var(--fit, contain); border-radius: 0; background: transparent; }
 </style>
 </head>
@@ -49,6 +51,12 @@ const showHeading = !bare && params.get("heading") !== "0";
 if (bare) {
   document.documentElement.classList.add("bare");
   document.documentElement.style.setProperty("--fit", params.get("fit") === "cover" ? "cover" : "contain");
+  // &warna=1b2430 (kode hex tanpa #) mengatur warna teks dan link di mode polos
+  const c = params.get("warna");
+  if (c && /^[0-9a-f]{3,8}$/i.test(c)) {
+    document.documentElement.style.setProperty("--fg", "#" + c);
+    document.documentElement.style.setProperty("--accent", "#" + c);
+  }
 }
 
 function el(tag, props = {}, kids = []) {
@@ -76,7 +84,7 @@ function render(slot, row) {
   const url = fileUrl(row);
   const link = slot.kind === "photo"
     ? el("a", { href: url, target: "_blank", rel: "noopener" }, [el("img", { src: url, alt: slot.label, loading: "lazy" })])
-    : el("a", { href: url, target: "_blank", rel: "noopener", textContent: showHeading ? "Buka dokumen" : slot.label });
+    : el("a", { className: "doc", href: url, target: "_blank", rel: "noopener", textContent: showHeading ? "Buka dokumen" : slot.label });
   box.append(link);
   return box;
 }
