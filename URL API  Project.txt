@@ -1,0 +1,8 @@
+URL API / Project:
+https://jqaxhcwysecihvbxsxnf.supabase.co/rest/v1/
+
+ID:
+jqaxhcwysecihvbxsxnf
+
+anon key:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxYXhoY3d5c2VjaWh2YnhzeG5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5NDc3ODQsImV4cCI6MjEwNzUyMzc4NH0.Rp1v_jnJNCqxI-gnNirlb48bB2y323i0bXFWkgPFSn0

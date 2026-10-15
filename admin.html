@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Admin</title>
+<style>
+:root {
+  --bg: #f6f7f9; --fg: #1b2430; --muted: #5d6877; --line: #d9dee5; --field: #ffffff;
+  --accent: #0f6fd1; --accent-fg: #ffffff; --danger: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #11151a; --fg: #e8ecf1; --muted: #9aa6b5; --line: #2c3541; --field: #1a2028;
+    --accent: #6aa9f0; --accent-fg: #0b1118; --danger: #f2877f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.3rem; margin: 0 0 4px; }
+h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.muted { color: var(--muted); font-size: .92rem; }
+.bar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+label { display: block; margin: 14px 0 4px; font-weight: 600; font-size: .95rem; }
+input, select, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--field); color: var(--fg); font: inherit; }
+textarea { min-height: 90px; resize: vertical; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--field); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button.link { border: 0; background: none; color: var(--danger); padding: 8px 6px; }
+button:disabled { opacity: .55; cursor: wait; }
+.slot { border-top: 1px solid var(--line); padding: 18px 0 6px; margin-top: 18px; }
+.current { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.current img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; background: var(--line); }
+.actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.msg { margin-top: 8px; min-height: 1.3em; font-size: .93rem; }
+.msg.err { color: var(--danger); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+
+<section id="login">
+  <h1>Masuk admin</h1>
+  <p class="muted">Hanya akun admin yang bisa mengubah konten.</p>
+  <form id="loginForm">
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">Kata sandi</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <div class="actions"><button class="primary" type="submit">Masuk</button></div>
+    <div id="loginMsg" class="msg err" role="alert"></div>
+  </form>
+</section>
+
+<section id="app" hidden>
+  <div class="bar">
+    <div><h1>Kelola konten</h1><div id="who" class="muted"></div></div>
+    <button id="logout" type="button">Keluar</button>
+  </div>
+  <label for="page" style="margin-top:0">Sub halaman</label>
+  <select id="page"></select>
+  <div id="slots"></div>
+</section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const { SUPABASE_URL, SUPABASE_ANON_KEY, BUCKET, MAX_MB, PAGES, SLOTS } = window.APP_CONFIG;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+
+const TYPES = {
+  photo: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" },
+  document: { "application/pdf": "pdf" }
+};
+const HINT = { photo: "JPG, PNG, atau WebP", document: "PDF" };
+class UserError extends Error {}
+
+let rows = {}; // slot key -> data tersimpan untuk sub halaman yang sedang dipilih
+
+function el(tag, props = {}, kids = []) {
+  const n = document.createElement(tag);
+  Object.assign(n, props);
+  kids.forEach(k => n.append(k));
+  return n;
+}
+const curPage = () => PAGES.find(p => p.id === $("page").value);
+function fileUrl(r) {
+  return sb.storage.from(BUCKET).getPublicUrl(r.file_path).data.publicUrl + "?v=" + encodeURIComponent(r.updated_at);
+}
+async function removeFile(path) {
+  if (!path) return;
+  const { error } = await sb.storage.from(BUCKET).remove([path]);
+  if (error) console.warn("Gagal menghapus file lama:", error);
+}
+
+/* ---------- Login / logout ---------- */
+sb.auth.onAuthStateChange((_event, session) => {
+  setTimeout(() => { // setTimeout menghindari panggilan Supabase di dalam callback ini
+    $("login").hidden = !!session;
+    $("app").hidden = !session;
+    if (session) { $("who").textContent = session.user.email; loadPage(); }
+  }, 0);
+});
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginMsg").textContent = "";
+  const { error } = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
+  if (error) $("loginMsg").textContent = "Email atau kata sandi salah.";
+  else $("password").value = "";
+});
+$("logout").addEventListener("click", () => sb.auth.signOut());
+
+/* ---------- Pilih sub halaman ---------- */
+PAGES.forEach(p => $("page").append(new Option(p.label, p.id)));
+$("page").addEventListener("change", loadPage);
+
+async function loadPage() {
+  const pageId = curPage().id;
+  $("slots").replaceChildren(el("p", { className: "muted", textContent: "Memuat…" }));
+  const { data, error } = await sb.from("page_content").select("*").eq("page", pageId);
+  if (curPage().id !== pageId) return; // pilihan sudah berganti saat memuat
+  if (error) { $("slots").replaceChildren(el("p", { className: "muted", textContent: "Gagal memuat. Muat ulang halaman." })); return; }
+  rows = Object.fromEntries(data.map(r => [r.slot, r]));
+  $("slots").replaceChildren(...(curPage().slots || SLOTS).map(s => slotBox(s)));
+}
+
+/* ---------- Satu komponen = satu kotak ---------- */
+function slotBox(slot, startMsg = "") {
+  const pageId = curPage().id;
+  const row = rows[slot.key];
+  const box = el("section", { className: "slot" });
+  const msg = el("div", { className: "msg", role: "status", textContent: startMsg });
+  const say = (t, err = false) => { msg.textContent = t; msg.className = "msg" + (err ? " err" : ""); };
+
+  const isText = slot.kind === "text";
+  const input = isText
+    ? el("textarea", { value: row ? row.body || "" : "", maxLength: 5000 })
+    : el("input", { type: "file", accept: Object.keys(TYPES[slot.kind]).join(",") });
+
+  box.append(el("h2", { textContent: slot.label }));
+  if (!isText) {
+    const has = row && row.file_path;
+    box.append(el("div", { className: "current" }, [
+      ...(has && slot.kind === "photo" ? [el("img", { src: fileUrl(row), alt: "" })] : []),
+      has
+        ? el("a", { href: fileUrl(row), target: "_blank", rel: "noopener", textContent: "Lihat file saat ini" })
+        : el("span", { className: "muted", textContent: "Belum ada file." })
+    ]));
+  }
+  box.append(input);
+  if (!isText) box.append(el("div", { className: "muted", textContent: `${HINT[slot.kind]}, maks ${MAX_MB} MB. File baru akan menggantikan yang lama.` }));
+
+  const saveBtn = el("button", { className: "primary", type: "button", textContent: isText ? "Simpan teks" : "Upload dan ganti" });
+  const filled = row && (isText ? row.body : row.file_path);
+  const clearBtn = el("button", { className: "link", type: "button", textContent: "Kosongkan", hidden: !filled });
+  box.append(el("div", { className: "actions" }, [saveBtn, clearBtn]), msg);
+
+  async function upsert(patch) {
+    const newRow = { page: pageId, slot: slot.key, kind: slot.kind, updated_at: new Date().toISOString(), ...patch };
+    const { data, error } = await sb.from("page_content").upsert(newRow, { onConflict: "page,slot" }).select().single();
+    if (error) throw error;
+    if (curPage().id === pageId) rows[slot.key] = data;
+  }
+
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = clearBtn.disabled = true;
+    say("Menyimpan…");
+    try {
+      if (isText) {
+        const body = input.value.trim();
+        if (!body) throw new UserError("Isi teks dulu, atau pakai Kosongkan.");
+        await upsert({ body, file_path: null });
+      } else {
+        const file = input.files[0];
+        if (!file) throw new UserError("Pilih file dulu.");
+        const ext = TYPES[slot.kind][file.type];
+        if (!ext) throw new UserError("Jenis file tidak sesuai. Boleh: " + HINT[slot.kind] + ".");
+        if (file.size > MAX_MB * 1024 * 1024) throw new UserError(`File terlalu besar (maks ${MAX_MB} MB).`);
+        const path = `${pageId}/${slot.key}.${ext}`;
+        // upsert: file lama di path yang sama langsung ditimpa
+        const up = await sb.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+        if (up.error) throw up.error;
+        await upsert({ body: null, file_path: path });
+        if (row && row.file_path && row.file_path !== path) await removeFile(row.file_path); // ekstensi berubah
+      }
+      if (curPage().id === pageId) box.replaceWith(slotBox(slot, "Tersimpan."));
+    } catch (err) {
+      console.error(err);
+      say(err instanceof UserError ? err.message : "Gagal menyimpan. Pastikan kamu masuk sebagai admin, lalu coba lagi.", true);
+      saveBtn.disabled = clearBtn.disabled = false;
+    }
+  });
+
+  clearBtn.addEventListener("click", async () => {
+    if (!confirm(`Kosongkan "${slot.label}"? File-nya juga ikut terhapus.`)) return;
+    saveBtn.disabled = clearBtn.disabled = true;
+    say("Menghapus…");
+    const { error } = await sb.from("page_content").delete().eq("page", pageId).eq("slot", slot.key);
+    if (error) { say("Gagal menghapus.", true); saveBtn.disabled = clearBtn.disabled = false; return; }
+    await removeFile(row.file_path);
+    if (curPage().id === pageId) { delete rows[slot.key]; box.replaceWith(slotBox(slot, "Dikosongkan.")); }
+  });
+
+  return box;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konten</title>
+<style>
+:root { --bg: #ffffff; --fg: #1b2430; --muted: #5d6877; --line: #d9dee5; --accent: #0f6fd1; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151a21; --fg: #e8ecf1; --muted: #9aa6b5; --line: #2c3541; --accent: #6aa9f0; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.slot { padding: 0 0 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+.slot:last-child { border-bottom: 0; margin-bottom: 0; }
+h2 { font-size: 1rem; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+p { margin: 0; white-space: pre-line; }
+a { color: var(--accent); }
+img { max-width: 100%; height: auto; display: block; border-radius: 4px; background: var(--line); }
+.note { color: var(--muted); }
+</style>
+</head>
+<body>
+<main id="root"><p class="note">Memuat…</p></main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const { SUPABASE_URL, SUPABASE_ANON_KEY, BUCKET, PAGES, SLOTS } = window.APP_CONFIG;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Alamat embed: index.html?page=halaman-1
+// Opsional: &slot=foto,nama  (hanya komponen tertentu)  &kind=photo  &heading=0 (tanpa label)
+const params = new URLSearchParams(location.search);
+const list = k => (params.get(k) ? params.get(k).split(",").map(s => s.trim()) : null);
+const onlySlots = list("slot");
+const onlyKinds = list("kind");
+const showHeading = params.get("heading") !== "0";
+
+function el(tag, props = {}, kids = []) {
+  const n = document.createElement(tag);
+  Object.assign(n, props);
+  kids.forEach(k => n.append(k));
+  return n;
+}
+function say(text) { document.getElementById("root").replaceChildren(el("p", { className: "note", textContent: text })); }
+
+function fileUrl(row) {
+  const { data } = sb.storage.from(BUCKET).getPublicUrl(row.file_path);
+  return data.publicUrl + "?v=" + encodeURIComponent(row.updated_at); // ?v= memastikan file baru langsung tampil
+}
+
+function render(slot, row) {
+  const box = el("section", { className: "slot" });
+  if (showHeading) box.append(el("h2", { textContent: slot.label }));
+  if (slot.kind === "text") {
+    if (!row.body) return null;
+    box.append(el("p", { textContent: row.body }));
+    return box;
+  }
+  if (!row.file_path) return null;
+  const url = fileUrl(row);
+  const link = slot.kind === "photo"
+    ? el("a", { href: url, target: "_blank", rel: "noopener" }, [el("img", { src: url, alt: slot.label, loading: "lazy" })])
+    : el("a", { href: url, target: "_blank", rel: "noopener", textContent: showHeading ? "Buka dokumen" : slot.label });
+  box.append(link);
+  return box;
+}
+
+async function load() {
+  const page = PAGES.find(p => p.id === params.get("page"));
+  if (!page) return say("Tambahkan ?page=… pada alamat. Pilihan: " + PAGES.map(p => p.id).join(", "));
+
+  const { data, error } = await sb.from("page_content").select("*").eq("page", page.id);
+  if (error) { console.error(error); return say("Konten belum bisa dimuat. Coba muat ulang halaman."); }
+
+  const bySlot = Object.fromEntries(data.map(r => [r.slot, r]));
+  const slots = (page.slots || SLOTS).filter(s =>
+    (!onlySlots || onlySlots.includes(s.key)) && (!onlyKinds || onlyKinds.includes(s.kind)));
+  const nodes = slots.map(s => bySlot[s.key] && render(s, bySlot[s.key])).filter(Boolean);
+  if (!nodes.length) return say("Belum ada konten.");
+  document.getElementById("root").replaceChildren(...nodes);
+}
+
+load();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>
