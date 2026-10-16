@@ -53,7 +53,7 @@ window.APP_CONFIG = {
     { key: "sop",               label: "SOP",                           kind: "document" },
     { key: "form-pengendalian", label: "Form pengendalian",             kind: "document" },
     { key: "jadwal-rencana",    label: "Jadwal rencana",                kind: "document" },
-    { key: "bukti-pelaksanaan", label: "Bukti pelaksanaan",             kind: "document" },
-    { key: "eval-perbaikan",    label: "Evaluasi dan rencana perbaikan", kind: "document", multiple: true }
+    { key: "bukti-pelaksanaan", label: "Bukti pelaksanaan",             kind: "document", multiple: true },
+    { key: "eval-perbaikan",    label: "Evaluasi dan rencana perbaikan", kind: "document" }
   ]
 };
