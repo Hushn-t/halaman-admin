@@ -10,11 +10,11 @@ window.APP_CONFIG = {
   // key: pengenal tetap (huruf kecil/angka/tanda hubung, jangan diubah setelah dipakai)
   // label: teks yang tampil | color: warna latar (kode hex)
   STATUS_LEVELS: [
-    { key: "sangat-rendah", label: "Sangat rendah", color: "#2e9e5b" },
-    { key: "rendah",        label: "Rendah",        color: "#8bc34a" },
-    { key: "sedang",        label: "Sedang",        color: "#f2c230" },
-    { key: "tinggi",        label: "Tinggi",        color: "#f08a24" },
-    { key: "sangat-tinggi", label: "Sangat tinggi", color: "#d64545" }
+    { key: "sangat-rendah", label: "SANGAT RENDAH", color: "#2e9e5b" },
+    { key: "rendah",        label: "RENDAH",        color: "#8bc34a" },
+    { key: "sedang",        label: "SEDANG",        color: "#f2c230" },
+    { key: "tinggi",        label: "TINGGI",        color: "#f08a24" },
+    { key: "sangat-tinggi", label: "SANGAT TINGGI", color: "#d64545" }
   ],
 
   // Halaman muka + 13 sub halaman. "id" dipakai di alamat (?page=halaman-1) dan nama folder file:
