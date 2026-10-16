@@ -51,9 +51,13 @@ html.bare .slot.person { width: 100%; height: auto; }
 html.bare .photo { width: 100%; height: auto; aspect-ratio: 3 / 4; object-fit: cover; }
 html.bare.solo-foto, html.bare.solo-foto body { overflow: hidden; }
 html.bare .photo.sq { width: min(100vw, 100vh); height: min(100vw, 100vh); aspect-ratio: auto; }
-.files a { display: block; padding: 7px 0; border-bottom: 1px solid var(--line); text-decoration: none; font-size: 14px; }
+.files a { display: flex; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); text-decoration: none; font-size: 14px; }
+.files a:hover, .files a:focus-visible { color: var(--hl, var(--accent)); }
+.files .ft { flex: 1; min-width: 0; }
+.files .fd { font-size: 12px; opacity: .7; white-space: nowrap; }
+.files a::after { content: "\2197"; opacity: .6; }
 html.bare .slot.files-slot { height: auto; }
-html.bare .files a { height: auto; }
+html.bare .files a { display: flex; height: auto; }
 html.bare .slot.status { height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 0; }
 </style>
 </head>
@@ -89,6 +93,13 @@ if (bare) {
   }
 }
 
+// &garis=ffcc00 : warna garis pemisah daftar dan warna saat disorot | &tanggal=1 : tampilkan tanggal unggah di daftar
+const garis = /^[0-9a-f]{3,8}$/i.test(params.get("garis") || "") ? "#" + params.get("garis") : null;
+if (garis) {
+  document.documentElement.style.setProperty("--line", garis);
+  document.documentElement.style.setProperty("--hl", garis);
+}
+const showDate = params.get("tanggal") === "1";
 // &pdf=tampil : isi PDF digambar langsung di dalam frame (dengan PDF.js), bukan hanya link
 const showPdf = params.get("pdf") === "tampil";
 const pdfQueue = [];
@@ -182,9 +193,13 @@ function renderFiles(slot, row) { // dokumen berjumlah banyak: daftar link, terb
   if (!files.length) return null;
   const box = el("section", { className: "slot files-slot" });
   if (showHeading) box.append(el("h2", { textContent: slot.label }));
+  const fmt = t => new Date(t).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
   box.append(el("div", { className: "files" }, files.map(f => el("a", {
-    href: sb.storage.from(BUCKET).getPublicUrl(f.path).data.publicUrl, target: "_blank", rel: "noopener", textContent: f.title
-  }))));
+    href: sb.storage.from(BUCKET).getPublicUrl(f.path).data.publicUrl, target: "_blank", rel: "noopener"
+  }, [
+    el("span", { className: "ft", textContent: f.title }),
+    ...(showDate && f.at ? [el("span", { className: "fd", textContent: fmt(f.at) })] : [])
+  ]))));
   return box;
 }
 

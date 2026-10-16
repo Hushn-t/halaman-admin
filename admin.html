@@ -465,7 +465,7 @@ function filesBox(slot, startMsg = "") {
         const up = await sb.storage.from(BUCKET).upload(path, f, { contentType: "application/pdf" });
         if (up.error) throw up.error;
         uploaded.push(path);
-        added.unshift({ path, title: f.name.replace(/\.pdf$/i, ""), at: Date.now() });
+        added.unshift({ path, title: f.name.replace(/\.pdf$/i, "").replace(/[+_]+/g, " ").replace(/\s+/g, " ").trim(), at: Date.now() });
       }
       await persist([...added, ...files]); // file baru di atas
       again(`${picked.length} file ditambahkan.`);
