@@ -46,6 +46,9 @@ a { color: var(--accent); }
 .level:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .level input { width: auto; margin: 0; }
 .dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.frow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.frow a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.link.neutral { color: var(--accent); }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -230,7 +233,8 @@ function slotBox(slot, startMsg = "") {
 }
 
 /* ---------- Pegawai, status, dan pembantu bersama ---------- */
-const buildBox = (s, m = "") => s.kind === "person" ? personBox(s, m) : s.kind === "status" ? statusBox(s, m) : slotBox(s, m);
+const buildBox = (s, m = "") => s.kind === "person" ? personBox(s, m) : s.kind === "status" ? statusBox(s, m)
+  : s.kind === "document" && s.multiple ? filesBox(s, m) : slotBox(s, m);
 
 async function putRow(pageId, slot, patch) {
   const newRow = { page: pageId, slot: slot.key, kind: slot.kind, body: null, file_path: null, data: {}, updated_at: new Date().toISOString(), ...patch };
@@ -402,6 +406,84 @@ function personBox(slot, startMsg = "") {
     if (!sel.value) throw new UserError("Pilih pegawai dulu.");
     await putRow(pageId, slot, { data: { employee: sel.value } });
   }, m => personBox(slot, m), startMsg);
+  return box;
+}
+
+// Dokumen berjumlah banyak (multiple: true): daftar file yang bertambah; tiap file bisa diganti judulnya atau dihapus
+const pubUrl = path => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+
+function filesBox(slot, startMsg = "") {
+  const pageId = curPage().id;
+  const row = rows[slot.key];
+  const files = (row && row.data && row.data.files) || (row && row.file_path ? [{ path: row.file_path, title: slot.label }] : []);
+  const msg = el("div", { className: "msg", role: "status", textContent: startMsg });
+  const say = (t, err = false) => { msg.textContent = t; msg.className = "msg" + (err ? " err" : ""); };
+  const box = el("section", { className: "slot" });
+  const busy = v => box.querySelectorAll("button").forEach(b => { b.disabled = v; });
+  const again = m => { if (curPage().id === pageId) box.replaceWith(filesBox(slot, m)); };
+  const fail = err => {
+    console.error(err);
+    say(err instanceof UserError ? err.message : "Gagal menyimpan. Pastikan kamu masuk sebagai admin, lalu coba lagi.", true);
+    busy(false);
+  };
+  const persist = list => list.length ? putRow(pageId, slot, { data: { files: list } }) : dropRow(pageId, slot, null);
+
+  const items = files.map(f => {
+    const ren = el("button", { className: "link neutral", type: "button", textContent: "Ubah judul" });
+    const del = el("button", { className: "link", type: "button", textContent: "Hapus" });
+    ren.addEventListener("click", async () => {
+      const t = prompt("Judul file:", f.title);
+      if (t === null || !t.trim()) return;
+      busy(true); say("Menyimpan…");
+      try { await persist(files.map(x => (x === f ? { ...x, title: t.trim() } : x))); again("Judul diubah."); } catch (err) { fail(err); }
+    });
+    del.addEventListener("click", async () => {
+      if (!confirm(`Hapus "${f.title}"? File-nya ikut terhapus.`)) return;
+      busy(true); say("Menghapus…");
+      try { await persist(files.filter(x => x !== f)); await removeFile(f.path); again("Terhapus."); } catch (err) { fail(err); }
+    });
+    return el("div", { className: "frow" }, [el("a", { href: pubUrl(f.path), target: "_blank", rel: "noopener", textContent: f.title }), ren, del]);
+  });
+
+  const input = el("input", { type: "file", multiple: true, accept: "application/pdf" });
+  input.setAttribute("aria-label", "Pilih file PDF");
+  const add = el("button", { className: "primary", type: "button", textContent: "Tambah file" });
+  add.addEventListener("click", async () => {
+    const picked = [...input.files];
+    const uploaded = [];
+    try {
+      if (!picked.length) throw new UserError("Pilih file PDF dulu.");
+      for (const f of picked) {
+        if (f.type !== "application/pdf") throw new UserError(`"${f.name}" bukan PDF.`);
+        if (f.size > MAX_MB * 1024 * 1024) throw new UserError(`"${f.name}" terlalu besar (maks ${MAX_MB} MB).`);
+      }
+      busy(true);
+      const added = [];
+      for (const [i, f] of picked.entries()) {
+        say(`Mengunggah ${i + 1} dari ${picked.length}…`);
+        const path = `${pageId}/${slot.key}/${crypto.randomUUID()}.pdf`;
+        const up = await sb.storage.from(BUCKET).upload(path, f, { contentType: "application/pdf" });
+        if (up.error) throw up.error;
+        uploaded.push(path);
+        added.unshift({ path, title: f.name.replace(/\.pdf$/i, ""), at: Date.now() });
+      }
+      await persist([...added, ...files]); // file baru di atas
+      again(`${picked.length} file ditambahkan.`);
+    } catch (err) {
+      for (const p of uploaded) await removeFile(p); // batalkan unggahan yang sudah masuk
+      fail(err);
+    }
+  });
+
+  box.append(
+    el("h2", { textContent: `${slot.label} (${files.length} file)` }),
+    ...(items.length ? items : [el("p", { className: "muted", textContent: "Belum ada file." })]),
+    el("span", { className: "lbl", textContent: "Tambah file (boleh pilih beberapa sekaligus)" }),
+    input,
+    el("div", { className: "muted", textContent: `PDF, maks ${MAX_MB} MB per file. File baru ditambahkan ke daftar, tidak menimpa yang lama.` }),
+    el("div", { className: "actions" }, [add]),
+    msg
+  );
   return box;
 }
 

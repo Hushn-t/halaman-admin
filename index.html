@@ -29,7 +29,7 @@ main { display: flex; flex-wrap: wrap; gap: 0 28px; }
 .photo.sq { aspect-ratio: 1 / 1; object-position: 50% 25%; }
 .part-nama .pname, .part-teks .pname { margin-top: 0; }
 .pname { font-weight: 700; font-size: var(--fs-name); margin-top: 8px; }
-.ppos { font-size: var(--fs-pos); margin-top: 5px;; }
+.ppos { font-size: var(--fs-pos); }
 .pnip { font-size: var(--fs-nip); }
 .slot.status { border: 0; padding: 14px 16px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 18px; }
 .menu { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; margin: 8px 0 0; }
@@ -51,6 +51,9 @@ html.bare .slot.person { width: 100%; height: auto; }
 html.bare .photo { width: 100%; height: auto; aspect-ratio: 3 / 4; object-fit: cover; }
 html.bare.solo-foto, html.bare.solo-foto body { overflow: hidden; }
 html.bare .photo.sq { width: min(100vw, 100vh); height: min(100vw, 100vh); aspect-ratio: auto; }
+.files a { display: block; padding: 7px 0; border-bottom: 1px solid var(--line); text-decoration: none; font-size: 14px; }
+html.bare .slot.files-slot { height: auto; }
+html.bare .files a { height: auto; }
 html.bare .slot.status { height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 0; }
 </style>
 </head>
@@ -174,9 +177,21 @@ function renderStatus(slot, row) {
   return box;
 }
 
+function renderFiles(slot, row) { // dokumen berjumlah banyak: daftar link, terbaru di atas
+  const files = (row.data && row.data.files) || (row.file_path ? [{ path: row.file_path, title: slot.label }] : []);
+  if (!files.length) return null;
+  const box = el("section", { className: "slot files-slot" });
+  if (showHeading) box.append(el("h2", { textContent: slot.label }));
+  box.append(el("div", { className: "files" }, files.map(f => el("a", {
+    href: sb.storage.from(BUCKET).getPublicUrl(f.path).data.publicUrl, target: "_blank", rel: "noopener", textContent: f.title
+  }))));
+  return box;
+}
+
 function render(slot, row) {
   if (slot.kind === "person") return renderPerson(slot, row);
   if (slot.kind === "status") return renderStatus(slot, row);
+  if (slot.kind === "document" && slot.multiple) return renderFiles(slot, row);
   const box = el("section", { className: "slot" });
   if (showHeading) box.append(el("h2", { textContent: slot.label }));
   if (slot.kind === "text") {
