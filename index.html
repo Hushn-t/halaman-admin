@@ -22,9 +22,11 @@ img { max-width: 100%; height: auto; display: block; border-radius: 4px; backgro
 
 main { display: flex; flex-wrap: wrap; gap: 0 28px; }
 .slot { flex: 1 1 100%; }
-.slot.person { flex: 0 0 auto; width: var(--pw, 150px); padding: 0; margin: 0 0 18px; border: 0; text-align: center; }
+.slot.person { flex: 0 0 auto; width: var(--pw, 150px); padding: 0; margin: 0 0 18px; border: 0; text-align: left; }
 .slot.person.large { --pw: 200px; }
 .photo { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+.photo.sq { aspect-ratio: 1 / 1; object-position: 50% 25%; }
+.part-nama .pname, .part-teks .pname { margin-top: 0; }
 .pname { font-weight: 700; font-size: 12px; margin-top: 8px; }
 .ppos { font-size: 12px; }
 .person.large .pname, .person.large .ppos { font-size: 18px; }
@@ -46,6 +48,8 @@ html.bare .pdf a { height: auto; }
 html.bare img { width: 100%; height: 100%; object-fit: var(--fit, contain); border-radius: 0; background: transparent; }
 html.bare .slot.person { width: 100%; height: auto; }
 html.bare .photo { width: 100%; height: auto; aspect-ratio: 3 / 4; object-fit: cover; }
+html.bare.solo-foto, html.bare.solo-foto body { overflow: hidden; }
+html.bare .photo.sq { width: min(100vw, 100vh); height: min(100vw, 100vh); aspect-ratio: auto; }
 html.bare .slot.status { height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 0; }
 </style>
 </head>
@@ -67,8 +71,11 @@ const onlyKinds = list("kind");
 // &polos=1 : mode khusus foto (tanpa latar, tanpa jarak, foto memenuhi frame). Tambahan: &fit=cover
 const bare = params.get("polos") === "1";
 const showHeading = !bare && params.get("heading") !== "0";
+// &bagian= foto | nama | jabatan | teks (nama+jabatan): menampilkan sebagian data pegawai saja
+const part = ["foto", "nama", "jabatan", "teks"].includes(params.get("bagian")) ? params.get("bagian") : null;
 if (bare) {
   document.documentElement.classList.add("bare");
+  if (part === "foto") document.documentElement.classList.add("solo-foto");
   document.documentElement.style.setProperty("--fit", params.get("fit") === "cover" ? "cover" : "contain");
   // &warna=1b2430 (kode hex tanpa #) mengatur warna teks dan link di mode polos
   const c = params.get("warna");
@@ -135,12 +142,17 @@ function renderPerson(slot, row) {
   // Data baru merujuk ke daftar pegawai; data lama (nama langsung di baris) tetap bisa tampil
   const e = d.employee ? empById[d.employee]
     : { name: d.name, position: d.position, photo_path: row.file_path, updated_at: row.updated_at };
-  if (!e || (!e.name && !e.photo_path)) return null;
-  const box = el("section", { className: "slot person" + (slot.large ? " large" : "") });
-  if (showHeading) box.append(el("h2", { textContent: slot.label }));
-  if (e.photo_path) box.append(el("img", { className: "photo", src: fileUrl({ file_path: e.photo_path, updated_at: e.updated_at }), alt: e.name || slot.label, loading: "lazy" }));
-  if (e.name) box.append(el("div", { className: "pname", textContent: e.name }));
-  if (e.position) box.append(el("div", { className: "ppos", textContent: e.position }));
+  if (!e) return null;
+  const nodes = [];
+  if ((!part || part === "foto") && e.photo_path) {
+    nodes.push(el("img", { className: "photo" + (part === "foto" ? " sq" : ""), alt: e.name || slot.label, loading: "lazy",
+      src: fileUrl({ file_path: e.photo_path, updated_at: e.updated_at }) }));
+  }
+  if ((!part || part === "nama" || part === "teks") && e.name) nodes.push(el("div", { className: "pname", textContent: e.name }));
+  if ((!part || part === "jabatan" || part === "teks") && e.position) nodes.push(el("div", { className: "ppos", textContent: e.position }));
+  if (!nodes.length) return null;
+  const box = el("section", { className: "slot person" + (slot.large ? " large" : "") + (part ? " part-" + part : "") }, nodes);
+  if (showHeading) box.prepend(el("h2", { textContent: slot.label }));
   return box;
 }
 
