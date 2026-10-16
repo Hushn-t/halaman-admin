@@ -305,6 +305,7 @@ async function renderEmployees(note = {}) {
 function employeeBox(emp, startMsg = "") {
   const nama = el("input", { type: "text", value: emp ? emp.name : "", maxLength: 120 });
   const jabatan = el("input", { type: "text", value: emp ? emp.position || "" : "", maxLength: 160 });
+  const nip = el("input", { type: "text", inputMode: "numeric", value: emp ? emp.nip || "" : "", maxLength: 40, placeholder: "Hanya nomor, mis. 1234567890987" });
   const foto = el("input", { type: "file", accept: Object.keys(TYPES.photo).join(",") });
   foto.setAttribute("aria-label", "Foto");
   const has = !!(emp && emp.photo_path);
@@ -317,6 +318,7 @@ function employeeBox(emp, startMsg = "") {
     el("h2", { textContent: emp ? emp.name : "Tambah pegawai baru" }),
     field("Nama lengkap", nama),
     field("Jabatan", jabatan),
+    field("NIP (hanya nomor)", nip),
     el("span", { className: "lbl", textContent: "Foto" }),
     el("div", { className: "current" }, [
       ...(has ? [el("img", { src: empPhoto(emp), alt: "" })] : []),
@@ -332,6 +334,8 @@ function employeeBox(emp, startMsg = "") {
     try {
       const name = nama.value.trim();
       if (!name) throw new UserError("Nama lengkap wajib diisi.");
+      const nipVal = nip.value.trim().replace(/^nip[\s:]*/i, ""); // awalan "NIP" ditambahkan otomatis saat tampil
+      if (nipVal && !/^[0-9 ]+$/.test(nipVal)) throw new UserError("NIP hanya berisi angka.");
       const id = emp ? emp.id : crypto.randomUUID();
       let photo_path = has ? emp.photo_path : null;
       const file = foto.files[0];
@@ -343,7 +347,7 @@ function employeeBox(emp, startMsg = "") {
         const up = await sb.storage.from(BUCKET).upload(photo_path, file, { upsert: true, contentType: file.type });
         if (up.error) throw up.error;
       }
-      const { error } = await sb.from("employees").upsert({ id, name, position: jabatan.value.trim(), photo_path, updated_at: new Date().toISOString() });
+      const { error } = await sb.from("employees").upsert({ id, name, position: jabatan.value.trim(), nip: nipVal || null, photo_path, updated_at: new Date().toISOString() });
       if (error) throw error;
       if (has && emp.photo_path !== photo_path) await removeFile(emp.photo_path); // ekstensi foto berubah
       await renderEmployees({ id: emp ? id : null, text: "Tersimpan." });

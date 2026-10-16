@@ -23,13 +23,14 @@ img { max-width: 100%; height: auto; display: block; border-radius: 4px; backgro
 main { display: flex; flex-wrap: wrap; gap: 0 28px; }
 .slot { flex: 1 1 100%; }
 .slot.person { flex: 0 0 auto; width: var(--pw, 150px); padding: 0; margin: 0 0 18px; border: 0; text-align: left; }
-.slot.person.large { --pw: 200px; }
+.slot.person { --fs-name: calc(12px + 2px); --fs-pos: 12px; --fs-nip: 10px; }
+.slot.person.large { --pw: 200px; --fs-name: calc(18px + 2px); --fs-pos: 18px; --fs-nip: 15px; }
 .photo { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
 .photo.sq { aspect-ratio: 1 / 1; object-position: 50% 25%; }
 .part-nama .pname, .part-teks .pname { margin-top: 0; }
-.pname { font-weight: 700; font-size: 12px; margin-top: 8px; }
-.ppos { font-size: 12px; }
-.person.large .pname, .person.large .ppos { font-size: 18px; }
+.pname { font-weight: 700; font-size: var(--fs-name); margin-top: 8px; }
+.ppos { font-size: var(--fs-pos); }
+.pnip { font-size: var(--fs-nip); }
 .slot.status { border: 0; padding: 14px 16px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 18px; }
 .menu { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; margin: 8px 0 0; }
 .menu a { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; }
@@ -71,8 +72,8 @@ const onlyKinds = list("kind");
 // &polos=1 : mode khusus foto (tanpa latar, tanpa jarak, foto memenuhi frame). Tambahan: &fit=cover
 const bare = params.get("polos") === "1";
 const showHeading = !bare && params.get("heading") !== "0";
-// &bagian= foto | nama | jabatan | teks (nama+jabatan): menampilkan sebagian data pegawai saja
-const part = ["foto", "nama", "jabatan", "teks"].includes(params.get("bagian")) ? params.get("bagian") : null;
+// &bagian= foto | nama | jabatan | nip | teks (nama+jabatan+NIP): menampilkan sebagian data pegawai saja
+const part = ["foto", "nama", "jabatan", "nip", "teks"].includes(params.get("bagian")) ? params.get("bagian") : null;
 if (bare) {
   document.documentElement.classList.add("bare");
   if (part === "foto") document.documentElement.classList.add("solo-foto");
@@ -150,6 +151,7 @@ function renderPerson(slot, row) {
   }
   if ((!part || part === "nama" || part === "teks") && e.name) nodes.push(el("div", { className: "pname", textContent: e.name }));
   if ((!part || part === "jabatan" || part === "teks") && e.position) nodes.push(el("div", { className: "ppos", textContent: e.position }));
+  if ((!part || part === "nip" || part === "teks") && e.nip) nodes.push(el("div", { className: "pnip", textContent: "NIP " + e.nip }));
   if (!nodes.length) return null;
   const box = el("section", { className: "slot person" + (slot.large ? " large" : "") + (part ? " part-" + part : "") }, nodes);
   if (showHeading) box.prepend(el("h2", { textContent: slot.label }));
